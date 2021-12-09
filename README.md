@@ -1,7 +1,8 @@
 Windows service template in pure C
 
-Originally written and compiled using MSVC98, this code was updated by Michael Maltsev ([@m417z](https://github.com/m417z)) to allow compilation using newer Visual Studio versions
+* 安装
+* 卸载
+* 调试
+* 线程间同步
 
-**NOTE**: This code was written in early 2000s, and was used with Windows
-XP/2000. If you are looking to write a Windows service, please check updated
-MSDN instead.
+服务启动时应使用事件等待，退出服务时set事件，本domo为简单期间，使用了全局变量
