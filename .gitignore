@@ -6,3 +6,4 @@
 /service/Debug
 *.pdb
 *.exe
+/service/Release

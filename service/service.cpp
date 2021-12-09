@@ -3,6 +3,9 @@
 #pragma comment( lib, "kernel32.lib" )
 #pragma comment( lib, "advapi32.lib" )
 #pragma comment( lib, "shell32.lib" )
+#pragma comment( lib, "wtsapi32.lib" )
+#pragma comment( lib, "userenv.lib" )
+#pragma comment( lib, "shlwapi.lib" )
 
 #define SZAPPNAME		"Simple"
 #define SZSERVICENAME		"SimpleService"
@@ -13,6 +16,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <tchar.h>
+#include <wtsapi32.h>
+#include <userenv.h>
+#include <tlhelp32.h>
+#include <shlwapi.h>
+#include <psapi.h>
+
+#include <string>
+#include <algorithm>
 
 SERVICE_STATUS		ssStatus;
 SERVICE_STATUS_HANDLE   sshStatusHandle;
@@ -32,6 +43,10 @@ VOID CmdRemoveService();
 VOID CmdDebugService(int argc, char** argv);
 BOOL WINAPI ControlHandler(DWORD dwCtrlType);
 LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize);
+int CreateProcessOnSession(int sessionId, LPWSTR app);
+DWORD GetExplorerToken(PHANDLE phExplorerToken);
+BOOL LaunchedSoftware(std::wstring strFileName, std::wstring csParam /* = EMPTY_STRING */);
+
 CRITICAL_SECTION g_cs;
 void DebugLog(LPCWSTR fmt, ...)
 {
@@ -80,6 +95,8 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
+	//LaunchedSoftware(L"notepad.exe", L"");
+	CreateProcessOnSession(1, const_cast<wchar_t*>(L"notepad.exe D:\\wfreerdp.txt"));
 	while (run)
 	{
 		DebugLog(L"child running, thread id = %d", GetCurrentThreadId());
@@ -438,7 +455,7 @@ LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize)
 	else
 	{
 		lpszTemp[lstrlen(lpszTemp) - 2] = TEXT('\0');
-		_stprintf(lpszBuf, TEXT("%s (0x%x)"), lpszTemp, GetLastError());
+		_stprintf(lpszBuf, TEXT("%s (%d)"), lpszTemp, GetLastError());
 	}
 
 	if (lpszTemp)
@@ -447,4 +464,271 @@ LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize)
 	}
 
 	return lpszBuf;
+}
+
+int CreateProcessOnSession(int sessionId, LPWSTR app)
+{
+	HANDLE impersonationToken = nullptr;
+	HANDLE userToken = nullptr;
+	DebugLog(L"CreateProcessOnSession WTSQueryUserToken ...");
+	if (0 == WTSQueryUserToken(sessionId, &impersonationToken))
+	{
+		int err = GetLastError();
+		DebugLog(TEXT("WTSQueryUserToken failed - %s"), GetLastErrorText(szErr, 256));
+		return 0;
+	}
+
+	SECURITY_ATTRIBUTES sa = { 0 };
+	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+	DebugLog(L"CreateProcessOnSession DuplicateTokenEx ...");
+	if (0 == DuplicateTokenEx(impersonationToken, 0, nullptr, SecurityImpersonation, TokenPrimary, &userToken))
+	{
+		DebugLog(TEXT("DuplicateTokenEx failed - %s"), GetLastErrorText(szErr, 256));
+		return 0;
+	}
+	if (impersonationToken)
+	{
+		CloseHandle(impersonationToken);
+	}
+	if (!userToken)
+	{
+		DebugLog(TEXT("DuplicateTokenEx ok but userToken null"));
+		return 0;
+	}
+
+	LPVOID envBlock = nullptr;
+	DebugLog(L"CreateProcessOnSession CreateEnvironmentBlock ...");
+	if (!CreateEnvironmentBlock(&envBlock, userToken, false))
+	{
+		DebugLog(TEXT("CreateEnvironmentBlock failed - %s"), GetLastErrorText(szErr, 256));
+		return 0;
+	}
+	if (!envBlock)
+	{
+		DebugLog(TEXT("CreateEnvironmentBlock ok but envBlock null"));
+		return 0;
+	}
+
+	PROCESS_INFORMATION process = { 0 };
+	SECURITY_ATTRIBUTES saProcess = { 0 };
+	SECURITY_ATTRIBUTES saThread = { 0 };
+	saProcess.nLength = sizeof(SECURITY_ATTRIBUTES);
+	saThread.nLength = sizeof(SECURITY_ATTRIBUTES);
+
+	STARTUPINFO si = { 0 };
+	si.cb = sizeof(STARTUPINFO);
+	si.lpDesktop = const_cast<wchar_t*>(L"WinSta0\\Default");
+	si.dwFlags = STARTF_USESHOWWINDOW | STARTF_FORCEONFEEDBACK;
+	si.wShowWindow = SW_SHOW;
+
+	DebugLog(L"CreateProcessOnSession CreateProcessAsUser ...");
+	if (!CreateProcessAsUser(userToken, nullptr, app, &saProcess, &saThread, true, CREATE_UNICODE_ENVIRONMENT, envBlock, nullptr, &si, &process))
+	{
+		DebugLog(TEXT("CreateProcessAsUser failed - %s"), GetLastErrorText(szErr, 256));
+		return 0;
+	}
+	CloseHandle(process.hProcess);
+	CloseHandle(process.hThread);
+
+	DebugLog(TEXT("CreateProcessOnSession pid - %d"), process.dwProcessId);
+	return process.dwProcessId;
+}
+
+DWORD GetExplorerToken(PHANDLE phExplorerToken)
+{
+	DWORD       dwStatus = ERROR_FILE_NOT_FOUND;
+	BOOL        bRet = FALSE;
+	HANDLE      hProcess = NULL;
+	HANDLE      hProcessSnap = NULL;
+	wchar_t        szExplorerPath[MAX_PATH] = { 0 };
+	wchar_t        FileName[MAX_PATH] = { 0 };
+
+	PROCESSENTRY32 pe32 = { 0 };
+
+	GetWindowsDirectory(szExplorerPath, MAX_PATH);
+	StrCatW(szExplorerPath, L"\\Explorer.EXE");
+	hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (hProcessSnap == INVALID_HANDLE_VALUE)
+	{
+		dwStatus = GetLastError();
+		return 0;
+	}
+	pe32.dwSize = sizeof(PROCESSENTRY32);
+	if (!Process32First(hProcessSnap, &pe32))
+	{
+		dwStatus = GetLastError();
+		return 0;
+	}
+
+	do {
+		hProcess = OpenProcess(
+			PROCESS_ALL_ACCESS,
+			FALSE,
+			pe32.th32ProcessID);
+
+		if (NULL != hProcess)
+		{
+
+			TCHAR szAppLocation[MAX_PATH] = _T("");
+			DWORD dwRet = ::GetModuleFileNameEx(hProcess, NULL,
+				szAppLocation, MAX_PATH);
+			if (0 == dwRet)
+			{
+				::Process32Next(hProcessSnap, &pe32);
+				CloseHandle(hProcess);
+				continue;
+			}
+
+			TCHAR szProcessName[MAX_PATH] = _T("");
+			dwRet = ::GetLongPathName(szAppLocation, szProcessName,
+				MAX_PATH);
+			if (0 == dwRet)
+			{
+				::Process32Next(hProcessSnap, &pe32);
+				CloseHandle(hProcess);
+				continue;
+			}
+			std::wstring csProcessName = szProcessName;
+			for (auto& str : csProcessName)
+			{
+				str = ::towlower(str);
+			}
+			std::wstring csExplorerPath = szExplorerPath;
+			for (auto& str : csExplorerPath)
+			{
+				str = ::towlower(str);
+			}
+			if (csProcessName == csExplorerPath)
+			{
+				HANDLE  hToken;
+
+				if (OpenProcessToken(hProcess, TOKEN_DUPLICATE, &hToken))
+				{
+					HANDLE hNewToken = NULL;
+					DuplicateTokenEx(hToken, TOKEN_ALL_ACCESS, NULL, SecurityImpersonation, TokenPrimary, &hNewToken);
+					*phExplorerToken = hNewToken;
+					dwStatus = 0;
+					CloseHandle(hToken);
+				}
+				break;
+			}
+
+			CloseHandle(hProcess);
+			hProcess = NULL;
+		}
+
+	} while (Process32Next(hProcessSnap, &pe32));
+
+	return dwStatus;
+}
+
+BOOL LaunchedSoftware(std::wstring strFileName, std::wstring csParam /* = EMPTY_STRING */)
+{
+	STARTUPINFO info;
+	memset(&info, 0, sizeof(info));
+	info.cb = sizeof(info);
+	//info.lpDesktop = _T("WinSta0\\Default");
+	info.lpDesktop = const_cast<wchar_t*>(L"WinSta0\\Default");
+	info.dwFlags |= STARTF_USESHOWWINDOW;
+	info.wShowWindow = SW_SHOWNORMAL;
+	std::wstring  strError;
+
+	HANDLE hPtoken = NULL;
+
+	GetExplorerToken(&hPtoken);
+	if (NULL == hPtoken)
+	{
+		return FALSE;
+	}
+
+	static HMODULE advapi32_dll = LoadLibraryW(L"advapi32.dll");
+	if (!advapi32_dll)
+		return FALSE;
+
+	DWORD dwSessionId = 0;
+	dwSessionId = WTSGetActiveConsoleSessionId();
+
+	if (!SetTokenInformation(hPtoken, TokenSessionId, (void*)(&dwSessionId), sizeof(DWORD)))
+	{
+		DWORD dwError = GetLastError();
+		FreeLibrary(advapi32_dll);
+		return FALSE;
+	}
+
+	TOKEN_PRIVILEGES tp; //新特权结构体   
+	LUID Luid;
+	BOOL retn = LookupPrivilegeValue(NULL, SE_DEBUG_NAME, &Luid);
+
+	if (retn != TRUE)
+	{
+		//cout<<"获取Luid失败"<<endl;   
+		FreeLibrary(advapi32_dll);
+		return FALSE;
+	}
+	//给TP和TP里的LUID结构体赋值   
+	tp.PrivilegeCount = 1;
+	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+	tp.Privileges[0].Luid = Luid;
+
+	//TOKEN_PRIVILEGES tp;
+	if (!AdjustTokenPrivileges(hPtoken, FALSE, &tp, sizeof(TOKEN_PRIVILEGES), NULL, NULL)) //这个函数启用或禁止指定访问令牌的特权
+	{
+		int abc = GetLastError();
+		printf("Adjust Privilege value Error: %u\n", GetLastError());
+		FreeLibrary(advapi32_dll);
+		return FALSE;
+	}
+	if (GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+	{
+		printf("Token does not have the provilege\n");
+	}
+
+	DWORD dwCreationFlag = NORMAL_PRIORITY_CLASS | CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT;
+	LPVOID pEnv = NULL;
+	if (!CreateEnvironmentBlock(&pEnv, hPtoken, FALSE))
+	{
+		//PrintfDbgStr(TEXT("CreateEnvironmentBlock error ！error code：%d\n"),GetLastError());  
+		//bSuccess = FALSE;  
+		//break;  
+	}
+
+	PROCESS_INFORMATION m_pinfo = { 0 };
+	BOOL bResult = FALSE;
+	if (0 == csParam.length())
+	{
+		bResult = CreateProcessAsUser(
+			hPtoken, // 这个参数上面已经得到
+			strFileName.c_str(),
+			NULL, // command line
+			NULL, // pointer to process SECURITY_ATTRIBUTES
+			NULL, // pointer to thread SECURITY_ATTRIBUTES
+			FALSE, // handles are not inheritable
+			dwCreationFlag, // creation flags
+			pEnv, // pointer to new environment block
+			NULL, // name of current directory
+			&info, // pointer to STARTUPINFO structure
+			&m_pinfo // receives information about new process
+		);
+	}
+	else
+	{
+		bResult = CreateProcessAsUser(
+			hPtoken, // 这个参数上面已经得到
+			strFileName.c_str(),
+			NULL, // command line
+			NULL, // pointer to process SECURITY_ATTRIBUTES
+			NULL, // pointer to thread SECURITY_ATTRIBUTES
+			FALSE, // handles are not inheritable
+			dwCreationFlag, // creation flags
+			NULL, // pointer to new environment block
+			NULL, // name of current directory
+			&info, // pointer to STARTUPINFO structure
+			&m_pinfo // receives information about new process
+		);
+	}
+
+	DWORD dwCode = GetLastError();
+
+	FreeLibrary(advapi32_dll);
+	return bResult;
 }
