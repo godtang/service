@@ -24,6 +24,7 @@
 
 #include <string>
 #include <algorithm>
+#include <time.h>
 
 SERVICE_STATUS		ssStatus;
 SERVICE_STATUS_HANDLE   sshStatusHandle;
@@ -63,7 +64,13 @@ void DebugLog(LPCWSTR fmt, ...)
 		ZeroMemory(fmtBuf, sizeof(fmtBuf));
 		_vsnwprintf_s(fmtBuf, PAGE_SIZE - 1, fmt, args);
 		OutputDebugStringW(fmtBuf);
-		fwprintf_s(fp, L"%s\n", fmtBuf);
+		time_t nowtime;
+		nowtime = time(NULL);
+		struct tm* local;
+		local = localtime(&nowtime);
+		fwprintf_s(fp, L"[%04d-%02d-%02d %02d:%02d:%02d] %s\n", local->tm_year, local->tm_mon, local->tm_mday,
+			local->tm_hour, local->tm_min, local->tm_sec,
+			fmtBuf);
 		va_end(args);
 		fclose(fp);
 	}
@@ -88,19 +95,56 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 	while (run)
 	{
 		DebugLog(L"main running, thread id = %d", GetCurrentThreadId());
-		Sleep(1000);
+		Sleep(5000);
 	}
 	DeleteCriticalSection(&g_cs);
+}
+
+wchar_t* ANSIToUnicode(char* str)
+{
+	int  unicodeLen = ::MultiByteToWideChar(CP_ACP,
+		0,
+		str,
+		-1,
+		NULL,
+		0);
+	wchar_t* pUnicode;
+	pUnicode = new  wchar_t[unicodeLen + 1];
+	memset(pUnicode, 0, (unicodeLen + 1) * sizeof(wchar_t));
+	::MultiByteToWideChar(CP_ACP,
+		0,
+		str,
+		-1,
+		(LPWSTR)pUnicode,
+		unicodeLen);
+
+	return pUnicode;
 }
 
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
 	//LaunchedSoftware(L"notepad.exe", L"");
-	CreateProcessOnSession(1, const_cast<wchar_t*>(L"notepad.exe D:\\wfreerdp.txt"));
+	FILE* fp = nullptr;
+	wchar_t command[260] = { 0 };
+	if (!fp)
+		_wfopen_s(&fp, L"C:\\serviceCommand.txt", L"rb");
+	if (fp)
+	{
+		fread(command, 2, 260, fp);
+		fclose(fp);
+		//DebugLog(L"command = %s", command);
+	}
+
+	//wchar_t* wCommand = ANSIToUnicode(command);
+	//DebugLog(L"wCommand = %s", wCommand);
+
+	wchar_t app[260] = { 0 };
+	wcscpy(app, command);
+	CreateProcessOnSession(1, app);
 	while (run)
 	{
 		DebugLog(L"child running, thread id = %d", GetCurrentThreadId());
-		Sleep(1000);
+		Sleep(5000);
 	}
 	DebugLog(L"child thread quit");
 	return 0;
@@ -117,52 +161,73 @@ VOID ServiceStop()
 }
 
 
-int main(int argc, char** argv)
+int wmain(int argc, wchar_t** argv)
 {
-	TCHAR szName[] = TEXT(SZSERVICENAME);
-	SERVICE_TABLE_ENTRY dispatchTable[] =
-	{
-		{ szName, service_main },
-		{ NULL, NULL }
-	};
+	PROCESS_INFORMATION process = { 0 };
+	SECURITY_ATTRIBUTES saProcess = { 0 };
+	SECURITY_ATTRIBUTES saThread = { 0 };
+	saProcess.nLength = sizeof(SECURITY_ATTRIBUTES);
+	saThread.nLength = sizeof(SECURITY_ATTRIBUTES);
 
-	if ((argc > 1) && ((*argv[1] == '-') || (*argv[1] == '/')))
+	STARTUPINFO si = { 0 };
+	si.cb = sizeof(STARTUPINFO);
+	si.lpDesktop = const_cast<wchar_t*>(L"WinSta0\\Default");
+	si.dwFlags = STARTF_USESHOWWINDOW | STARTF_FORCEONFEEDBACK;
+	si.wShowWindow = SW_SHOW;
+	const wchar_t* command = L"C:\\??\\baretail.exe";
+	wchar_t app[260] = { 0 };
+	wcscpy(app, command);
+	if (!CreateProcessW(app, nullptr, &saProcess, &saThread, true, CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr, &si, &process))
 	{
-		if (_stricmp("install", argv[1] + 1) == 0)
-		{
-			CmdInstallService();
-		}
-		else if (_stricmp("remove", argv[1] + 1) == 0)
-		{
-			CmdRemoveService();
-		}
-		else if (_stricmp("debug", argv[1] + 1) == 0)
-		{
-			bDebug = TRUE;
-			CmdDebugService(argc, argv);
-		}
-		else
-		{
-			goto dispatch;
-		}
-
+		int err = GetLastError();
+		wprintf(TEXT("CreateProcessW failed - %s"), GetLastErrorText(szErr, 256));
 		return 0;
 	}
-
-dispatch:
-	// this is just to be friendly
-	printf("%s -install          to install the service\n", SZAPPNAME);
-	printf("%s -remove           to remove the service\n", SZAPPNAME);
-	printf("%s -debug <params>   to run as a console app for debugging\n", SZAPPNAME);
-	printf("\nStartServiceCtrlDispatcher being called.\n");
-	printf("This may take several seconds.  Please wait.\n");
-
-	if (!StartServiceCtrlDispatcher(dispatchTable))
-	{
-		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
-	}
-
 	return 0;
+	//	TCHAR szName[] = TEXT(SZSERVICENAME);
+	//	SERVICE_TABLE_ENTRY dispatchTable[] =
+	//	{
+	//		{ szName, service_main },
+	//		{ NULL, NULL }
+	//	};
+	//
+	//	if ((argc > 1) && ((*argv[1] == '-') || (*argv[1] == '/')))
+	//	{
+	//		if (_stricmp("install", argv[1] + 1) == 0)
+	//		{
+	//			CmdInstallService();
+	//		}
+	//		else if (_stricmp("remove", argv[1] + 1) == 0)
+	//		{
+	//			CmdRemoveService();
+	//		}
+	//		else if (_stricmp("debug", argv[1] + 1) == 0)
+	//		{
+	//			bDebug = TRUE;
+	//			CmdDebugService(argc, argv);
+	//		}
+	//		else
+	//		{
+	//			goto dispatch;
+	//		}
+	//
+	//		return 0;
+	//	}
+	//
+	//dispatch:
+	//	// this is just to be friendly
+	//	printf("%s -install          to install the service\n", SZAPPNAME);
+	//	printf("%s -remove           to remove the service\n", SZAPPNAME);
+	//	printf("%s -debug <params>   to run as a console app for debugging\n", SZAPPNAME);
+	//	printf("\nStartServiceCtrlDispatcher being called.\n");
+	//	printf("This may take several seconds.  Please wait.\n");
+	//
+	//	if (!StartServiceCtrlDispatcher(dispatchTable))
+	//	{
+	//		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
+	//	}
+	//
+	//	return 0;
 }
 
 void WINAPI service_main(DWORD dwArgc, LPTSTR* lpszArgv)
@@ -468,6 +533,7 @@ LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize)
 
 int CreateProcessOnSession(int sessionId, LPWSTR app)
 {
+	DebugLog(L"CreateProcessOnSession %d %s", sessionId, app);
 	HANDLE impersonationToken = nullptr;
 	HANDLE userToken = nullptr;
 	DebugLog(L"CreateProcessOnSession WTSQueryUserToken ...");
@@ -481,7 +547,7 @@ int CreateProcessOnSession(int sessionId, LPWSTR app)
 	SECURITY_ATTRIBUTES sa = { 0 };
 	sa.nLength = sizeof(SECURITY_ATTRIBUTES);
 	DebugLog(L"CreateProcessOnSession DuplicateTokenEx ...");
-	if (0 == DuplicateTokenEx(impersonationToken, 0, nullptr, SecurityImpersonation, TokenPrimary, &userToken))
+	if (0 == DuplicateTokenEx(impersonationToken, TOKEN_ALL_ACCESS, nullptr, SecurityImpersonation, TokenPrimary, &userToken))
 	{
 		DebugLog(TEXT("DuplicateTokenEx failed - %s"), GetLastErrorText(szErr, 256));
 		return 0;
@@ -509,6 +575,9 @@ int CreateProcessOnSession(int sessionId, LPWSTR app)
 		return 0;
 	}
 
+	PROFILEINFO fileInfo = { 0 };
+	LoadUserProfile(userToken, &fileInfo);
+
 	PROCESS_INFORMATION process = { 0 };
 	SECURITY_ATTRIBUTES saProcess = { 0 };
 	SECURITY_ATTRIBUTES saThread = { 0 };
@@ -522,6 +591,7 @@ int CreateProcessOnSession(int sessionId, LPWSTR app)
 	si.wShowWindow = SW_SHOW;
 
 	DebugLog(L"CreateProcessOnSession CreateProcessAsUser ...");
+	DebugLog(L"CreateProcessOnSession CreateProcessAsUser %s", app);
 	if (!CreateProcessAsUser(userToken, nullptr, app, &saProcess, &saThread, true, CREATE_UNICODE_ENVIRONMENT, envBlock, nullptr, &si, &process))
 	{
 		DebugLog(TEXT("CreateProcessAsUser failed - %s"), GetLastErrorText(szErr, 256));
@@ -531,6 +601,7 @@ int CreateProcessOnSession(int sessionId, LPWSTR app)
 	CloseHandle(process.hThread);
 
 	DebugLog(TEXT("CreateProcessOnSession pid - %d"), process.dwProcessId);
+
 	return process.dwProcessId;
 }
 
