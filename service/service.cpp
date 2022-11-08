@@ -74,6 +74,10 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 	{
 		DebugLog(L"main running, thread id = %d", GetCurrentThreadId());
 		Sleep(1000);
+		if (!ReportStatusToSCMgr(SERVICE_RUNNING, NO_ERROR, 0))
+		{
+			DebugLog(L"report service running error");
+		}
 	}
 	DeleteCriticalSection(&g_cs);
 }
