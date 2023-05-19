@@ -7,3 +7,5 @@
 *.pdb
 *.exe
 /service/Release
+x64
+
