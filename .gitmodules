@@ -1,0 +1,3 @@
+[submodule "pcquicklib"]
+	path = pcquicklib
+	url = https://gitee.com/tang_god/pcquicklib.git
