@@ -59,10 +59,29 @@ void DebugLog(LPCWSTR fmt, ...)
 
 bool Init()
 {
+	OutputDebugString(L"service init");
+	// ³õÊ¼»¯
 	if (nullptr == CConfig::GetInstance())
 	{
 		return false;
 	}
+
+	auto config = CConfig::GetInstance();
+	auto strLogName = config->Root.Get("/log/name", "a.log");
+	auto strLogLevle = config->Root.Get("/log/level", "debug");
+	auto iLogMaxSize = config->Root.Get("/log/maxSize", 5 * 1024 * 1024);
+	std::map<std::string, CPCLog::ePCLogThreshold> loggerLevel;
+	loggerLevel["trace"] = CPCLog::eTRACE;
+	loggerLevel["debug"] = CPCLog::eDEBUG;
+	loggerLevel["info"] = CPCLog::eINFO;
+	loggerLevel["warn"] = CPCLog::eWARN;
+	loggerLevel["error"] = CPCLog::eERROR;
+	loggerLevel["off"] = CPCLog::eOFF;
+
+	CPCLog::Default()->SetLogAttr(strLogName, loggerLevel[strLogLevle], false, false, iLogMaxSize);
+
+	OutputDebugStringA(strLogName);
+	PC_INFO("service init finish");
 	return true;
 }
 

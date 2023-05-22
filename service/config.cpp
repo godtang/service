@@ -1,6 +1,6 @@
 
 #include <codecvt>
-#include <iostream>
+
 
 #include "config.h"
 
@@ -54,6 +54,7 @@ bool CConfig::Load()
 		OutputDebugString(wstr.c_str());
 		return false;
 	}
+	m_file = filePath;
 
 	return true;
 }
