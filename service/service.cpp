@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <tchar.h>
+#include "pcquicklib.h"
 
 SERVICE_STATUS		ssStatus;
 SERVICE_STATUS_HANDLE   sshStatusHandle;
@@ -59,7 +60,6 @@ bool run = false;
 DWORD WINAPI ThreadFunc(LPVOID);
 VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-	InitializeCriticalSection(&g_cs);
 	DebugLog(L"recv service start");
 	run = true;
 	HANDLE hThread;
@@ -79,7 +79,6 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 			DebugLog(L"report service running error");
 		}
 	}
-	DeleteCriticalSection(&g_cs);
 }
 
 DWORD WINAPI ThreadFunc(LPVOID p)
@@ -135,6 +134,7 @@ int main(int argc, char** argv)
 
 		return 0;
 	}
+	InitializeCriticalSection(&g_cs);
 
 dispatch:
 	// this is just to be friendly
@@ -144,11 +144,15 @@ dispatch:
 	printf("\nStartServiceCtrlDispatcher being called.\n");
 	printf("This may take several seconds.  Please wait.\n");
 
+	DebugLog(L"StartServiceCtrlDispatcher 1");
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
+		DebugLog(L"StartServiceCtrlDispatcher 2");
 		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
 	}
 
+	DebugLog(L"StartServiceCtrlDispatcher 3");
+	DeleteCriticalSection(&g_cs);
 	return 0;
 }
 
