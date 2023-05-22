@@ -34,28 +34,6 @@ VOID CmdRemoveService();
 VOID CmdDebugService(int argc, char** argv);
 BOOL WINAPI ControlHandler(DWORD dwCtrlType);
 LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize);
-CRITICAL_SECTION g_cs;
-void DebugLog(LPCWSTR fmt, ...)
-{
-	EnterCriticalSection(&g_cs);
-#define PAGE_SIZE 0x1000
-	FILE* fp = nullptr;
-	if (!fp)
-		_wfopen_s(&fp, L"c:\\simpleservice.log", L"a+");
-	if (fp)
-	{
-		va_list args;
-		va_start(args, fmt);
-		wchar_t fmtBuf[PAGE_SIZE];
-		ZeroMemory(fmtBuf, sizeof(fmtBuf));
-		_vsnwprintf_s(fmtBuf, PAGE_SIZE - 1, fmt, args);
-		OutputDebugStringW(fmtBuf);
-		fwprintf_s(fp, L"%s\n", fmtBuf);
-		va_end(args);
-		fclose(fp);
-	}
-	LeaveCriticalSection(&g_cs);
-}
 
 bool Init()
 {
@@ -77,10 +55,8 @@ bool Init()
 	loggerLevel["warn"] = CPCLog::eWARN;
 	loggerLevel["error"] = CPCLog::eERROR;
 	loggerLevel["off"] = CPCLog::eOFF;
-
 	CPCLog::Default()->SetLogAttr(strLogName, loggerLevel[strLogLevle], false, false, iLogMaxSize);
 
-	OutputDebugStringA(strLogName);
 	PC_INFO("service init finish");
 	return true;
 }
@@ -89,7 +65,7 @@ bool run = false;
 DWORD WINAPI ThreadFunc(LPVOID);
 VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-	DebugLog(L"recv service start");
+	PC_INFO("recv service start");
 	run = true;
 	HANDLE hThread;
 	DWORD  threadId;
@@ -97,16 +73,12 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 
 	if (!ReportStatusToSCMgr(SERVICE_RUNNING, NO_ERROR, 0))
 	{
-		DebugLog(L"report service running error");
+		PC_ERROR("report service running error");
 	}
 	while (run)
 	{
-		DebugLog(L"main running, thread id = %d", GetCurrentThreadId());
+		PC_INFO("main running, thread id = %d", GetCurrentThreadId());
 		Sleep(1000);
-		if (!ReportStatusToSCMgr(SERVICE_RUNNING, NO_ERROR, 0))
-		{
-			DebugLog(L"report service running error");
-		}
 	}
 }
 
@@ -114,20 +86,20 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 {
 	while (run)
 	{
-		DebugLog(L"child running, thread id = %d", GetCurrentThreadId());
+		PC_INFO("child running, thread id = %d", GetCurrentThreadId());
 		Sleep(1000);
 	}
-	DebugLog(L"child thread quit");
+	PC_WARN("child thread quit");
 	return 0;
 }
 
 VOID ServiceStop()
 {
-	DebugLog(L"recv service stop");
+	PC_WARN("recv service stop");
 	run = false;
 	if (!ReportStatusToSCMgr(SERVICE_STOPPED, NO_ERROR, 0))
 	{
-		DebugLog(L"report service running error");
+		PC_ERROR("report service running error");
 	}
 }
 
@@ -163,7 +135,6 @@ int main(int argc, char** argv)
 
 		return 0;
 	}
-	InitializeCriticalSection(&g_cs);
 
 dispatch:
 	// this is just to be friendly
@@ -182,12 +153,11 @@ dispatch:
 
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
-		DebugLog(L"StartServiceCtrlDispatcher 2");
+		PC_ERROR("StartServiceCtrlDispatcher 2");
 		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
 	}
 
-	DebugLog(L"StartServiceCtrlDispatcher 3");
-	DeleteCriticalSection(&g_cs);
+	PC_INFO("StartServiceCtrlDispatcher 3");
 	return 0;
 }
 
