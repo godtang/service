@@ -73,7 +73,7 @@ bool run = false;
 DWORD WINAPI ThreadFunc(LPVOID);
 VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 {
-	PC_INFO("recv service start");
+	PC_INFO("ServiceStart");
 	run = true;
 	HANDLE hThread;
 	DWORD  threadId;
@@ -85,16 +85,18 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 	}
 	while (run)
 	{
-		PC_INFO("main running, thread id = %d", GetCurrentThreadId());
+		//PC_INFO("main running, thread id = %d", GetCurrentThreadId());
 		Sleep(1000);
 	}
+	PC_INFO("ServiceStart end");
 }
 
 DWORD WINAPI ThreadFunc(LPVOID p)
 {
+	PC_INFO("ThreadFunc");
 	while (run)
 	{
-		PC_INFO("child running, thread id = %d", GetCurrentThreadId());
+		//PC_INFO("child running, thread id = %d", GetCurrentThreadId());
 		Sleep(1000);
 	}
 	PC_WARN("child thread quit");
@@ -103,14 +105,15 @@ DWORD WINAPI ThreadFunc(LPVOID p)
 
 VOID ServiceStop()
 {
-	PC_WARN("recv service stop");
+	PC_WARN("ServiceStop");
 	run = false;
 	if (!ReportStatusToSCMgr(SERVICE_STOPPED, NO_ERROR, 0))
 	{
 		PC_ERROR("report service running error");
 	}
+	Sleep(10000);
+	PC_INFO("ServiceStop end");
 }
-
 
 int main(int argc, char** argv)
 {
@@ -159,18 +162,20 @@ dispatch:
 	}
 
 
+	PC_ERROR("StartServiceCtrlDispatcher 1 %d", GetCurrentProcessId());
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
-		PC_ERROR("StartServiceCtrlDispatcher 2");
+		PC_ERROR("StartServiceCtrlDispatcher 2 %d", GetCurrentProcessId());
 		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
 	}
 
-	PC_INFO("StartServiceCtrlDispatcher 3");
+	PC_ERROR("StartServiceCtrlDispatcher 3 %d", GetCurrentProcessId());
 	return 0;
 }
 
 void WINAPI service_main(DWORD dwArgc, LPTSTR* lpszArgv)
 {
+	PC_INFO("service_main");
 	sshStatusHandle = RegisterServiceCtrlHandler(TEXT(SZSERVICENAME), service_ctrl);
 
 	if (!sshStatusHandle)
@@ -186,7 +191,9 @@ void WINAPI service_main(DWORD dwArgc, LPTSTR* lpszArgv)
 		goto cleanup;
 	}
 
+	PC_INFO("service_main ServiceStart");
 	ServiceStart(dwArgc, lpszArgv);
+	PC_INFO("service_main ServiceStart end");
 
 cleanup:
 	if (sshStatusHandle)
