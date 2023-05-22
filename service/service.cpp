@@ -15,6 +15,7 @@
 #include <tchar.h>
 #include "pcquicklib.h"
 #include "config.h"
+#include "websocketServer.h"
 
 SERVICE_STATUS		ssStatus;
 SERVICE_STATUS_HANDLE   sshStatusHandle;
@@ -83,10 +84,17 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 	{
 		PC_ERROR("report service running error");
 	}
-	while (run)
+	CPCTcpListenService<CWebsocketServer> server;
+	auto result = server.Start(CPCSockAddr("127.0.0.1", 9090));
+	if (!result)
 	{
-		//PC_INFO("main running, thread id = %d", GetCurrentThreadId());
-		Sleep(1000);
+		PC_ERROR("websocket start fail£º%s", result.ErrDesc());
+		return;
+	}
+	PC_INFO("websocket linten 9090");
+	while (true)
+	{
+		Sleep(10000);
 	}
 	PC_INFO("ServiceStart end");
 }
@@ -161,7 +169,7 @@ dispatch:
 		return 1;
 	}
 
-
+	CPCPoller::obj().Start();
 	PC_ERROR("StartServiceCtrlDispatcher 1 %d", GetCurrentProcessId());
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
@@ -170,6 +178,7 @@ dispatch:
 	}
 
 	PC_ERROR("StartServiceCtrlDispatcher 3 %d", GetCurrentProcessId());
+	CPCPoller::obj().Stop();
 	return 0;
 }
 
@@ -194,6 +203,7 @@ void WINAPI service_main(DWORD dwArgc, LPTSTR* lpszArgv)
 	PC_INFO("service_main ServiceStart");
 	ServiceStart(dwArgc, lpszArgv);
 	PC_INFO("service_main ServiceStart end");
+
 
 cleanup:
 	if (sshStatusHandle)

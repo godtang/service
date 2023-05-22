@@ -142,9 +142,11 @@
   <ItemGroup>
     <ClCompile Include="config.cpp" />
     <ClCompile Include="service.cpp" />
+    <ClCompile Include="websocketServer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.h" />
+    <ClInclude Include="websocketServer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
