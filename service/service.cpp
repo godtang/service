@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <tchar.h>
 #include "pcquicklib.h"
+#include "config.h"
 
 SERVICE_STATUS		ssStatus;
 SERVICE_STATUS_HANDLE   sshStatusHandle;
@@ -21,7 +22,7 @@ DWORD			dwErr = 0;
 BOOL			bDebug = FALSE;
 TCHAR			szErr[256];
 HANDLE			hServerStopEvent = NULL;
-
+bool Init();
 VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv);
 VOID ServiceStop();
 BOOL ReportStatusToSCMgr(DWORD dwCurrentState, DWORD dwWin32ExitCode, DWORD dwWaitHint);
@@ -54,6 +55,15 @@ void DebugLog(LPCWSTR fmt, ...)
 		fclose(fp);
 	}
 	LeaveCriticalSection(&g_cs);
+}
+
+bool Init()
+{
+	if (nullptr == CConfig::GetInstance())
+	{
+		return false;
+	}
+	return true;
 }
 
 bool run = false;
@@ -144,7 +154,13 @@ dispatch:
 	printf("\nStartServiceCtrlDispatcher being called.\n");
 	printf("This may take several seconds.  Please wait.\n");
 
-	DebugLog(L"StartServiceCtrlDispatcher 1");
+	if (!Init())
+	{
+		AddToMessageLog(TEXT("init fail"));
+		return 1;
+	}
+
+
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
 		DebugLog(L"StartServiceCtrlDispatcher 2");

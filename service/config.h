@@ -1,11 +1,15 @@
 #pragma once
+
 #include "pcquicklib.h"
+
 class CConfig
 {
 public:
-	CConfig* CreateInstance();
+	static CConfig* GetInstance();
+	CPCJsonObject Root;
 private:
 	CConfig();
-	CConfig* pInstance = nullptr;
+	static CConfig* pInstance;
+	bool Load();
 };
 
