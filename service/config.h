@@ -11,5 +11,6 @@ private:
 	CConfig();
 	static CConfig* pInstance;
 	bool Load();
+	std::string m_file;
 };
 
