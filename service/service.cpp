@@ -55,8 +55,16 @@ bool Init()
 	loggerLevel["warn"] = CPCLog::eWARN;
 	loggerLevel["error"] = CPCLog::eERROR;
 	loggerLevel["off"] = CPCLog::eOFF;
-	CPCLog::Default()->SetLogAttr(strLogName, loggerLevel[strLogLevle], false, false, iLogMaxSize);
 
+	if (CPCFileUtil::PCPathIsAbsolute(strLogName))
+	{
+		CPCLog::Default()->SetLogAttr(strLogName, loggerLevel[strLogLevle], false, false, iLogMaxSize);
+	}
+	else
+	{
+		std::string strTempLogName = CPCFileUtil::PCGetSelfFileDir().Get().first + strLogName;
+		CPCLog::Default()->SetLogAttr(strTempLogName.c_str(), loggerLevel[strLogLevle], false, false, iLogMaxSize);
+	}
 	PC_INFO("service init finish");
 	return true;
 }
