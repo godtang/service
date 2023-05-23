@@ -25,8 +25,9 @@ public:
 
 
 
-		this->SendText("hello,world");
-		PC_INFO("[0x%p]回应", this);
+		this->SendText("hello,world" + data);
+		auto xxxx = "hello,world" + data;
+		PC_INFO("[0x%p]回应:%s", this, xxxx.c_str());
 
 		return CPCResult<>();
 	}

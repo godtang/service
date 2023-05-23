@@ -35,10 +35,13 @@ VOID CmdRemoveService();
 VOID CmdDebugService(int argc, char** argv);
 BOOL WINAPI ControlHandler(DWORD dwCtrlType);
 LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize);
+CPCRecMutex mutex;
+CPCCondition condition(mutex);
 
 bool Init()
 {
 	OutputDebugString(L"service init");
+
 	// ≥ı ºªØ
 	if (nullptr == CConfig::GetInstance())
 	{
@@ -70,15 +73,11 @@ bool Init()
 	return true;
 }
 
-bool run = false;
-DWORD WINAPI ThreadFunc(LPVOID);
+
 VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 {
+	CPCGuard<CPCRecMutex> guard(mutex);
 	PC_INFO("ServiceStart");
-	run = true;
-	HANDLE hThread;
-	DWORD  threadId;
-	hThread = CreateThread(NULL, 0, ThreadFunc, 0, 0, &threadId);
 
 	if (!ReportStatusToSCMgr(SERVICE_RUNNING, NO_ERROR, 0))
 	{
@@ -92,34 +91,22 @@ VOID ServiceStart(DWORD dwArgc, LPTSTR* lpszArgv)
 		return;
 	}
 	PC_INFO("websocket linten 9090");
-	while (true)
-	{
-		Sleep(10000);
-	}
+	condition.Wait(-1);
+	PC_INFO("websocket stopping");
+	server.Stop();
+	PC_INFO("websocket stopped");
 	PC_INFO("ServiceStart end");
-}
-
-DWORD WINAPI ThreadFunc(LPVOID p)
-{
-	PC_INFO("ThreadFunc");
-	while (run)
-	{
-		//PC_INFO("child running, thread id = %d", GetCurrentThreadId());
-		Sleep(1000);
-	}
-	PC_WARN("child thread quit");
-	return 0;
 }
 
 VOID ServiceStop()
 {
+	CPCGuard<CPCRecMutex> guard(mutex);
 	PC_WARN("ServiceStop");
-	run = false;
+	condition.Notify();
 	if (!ReportStatusToSCMgr(SERVICE_STOPPED, NO_ERROR, 0))
 	{
 		PC_ERROR("report service running error");
 	}
-	Sleep(10000);
 	PC_INFO("ServiceStop end");
 }
 
@@ -177,8 +164,8 @@ dispatch:
 		AddToMessageLog(TEXT("StartServiceCtrlDispatcher failed."));
 	}
 
-	PC_ERROR("StartServiceCtrlDispatcher 3 %d", GetCurrentProcessId());
 	CPCPoller::obj().Stop();
+	PC_ERROR("StartServiceCtrlDispatcher 3 %d", GetCurrentProcessId());
 	return 0;
 }
 
