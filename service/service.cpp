@@ -125,6 +125,7 @@ VOID ServiceStop()
 
 int main(int argc, char** argv)
 {
+	CPCPoller::obj().Start();
 	TCHAR szName[] = TEXT(SZSERVICENAME);
 	SERVICE_TABLE_ENTRY dispatchTable[] =
 	{
@@ -169,7 +170,6 @@ dispatch:
 		return 1;
 	}
 
-	CPCPoller::obj().Start();
 	PC_ERROR("StartServiceCtrlDispatcher 1 %d", GetCurrentProcessId());
 	if (!StartServiceCtrlDispatcher(dispatchTable))
 	{
